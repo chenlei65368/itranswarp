@@ -8,7 +8,7 @@ Full-featured CMS including blog, wiki, discussion, etc. powered by SpringBoot.
 * OAuth2 integration (weibo, QQ, facebook, etc.)
 * SEO support
 * REST API
-* customized css with uikit2
+* customized CSS with UIkit2
 
 ### Environment
 
@@ -44,7 +44,7 @@ $ mysql -u root -p it < release/init.sql
 ```
 
 ### Run
- 
+
 ```
 java -jar itranswarp.jar
 ```
@@ -64,7 +64,7 @@ Please check [application.yml](src/main/resources/application.yml) for environme
 
 ### Deploy
 
-iTranswarp is deployed by Ansible. Scripts is ready for Ubuntu Server 18.04 x64.
+iTranswarp is deployed by Ansible. Scripts is ready for Ubuntu Server 18.04 or CentOS 7/8.
 
 Deploy script:
 
@@ -90,7 +90,7 @@ The deploy script will do following:
 Support [.env.example](docker/.env.example) use local ip for test. 
 ```
 $ cd docker
-$ cp .env.example
+$ cp .env.example .env
 $ vim .env
 $ docker-compose up -d
 ```

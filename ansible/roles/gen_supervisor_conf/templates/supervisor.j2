@@ -1,10 +1,10 @@
 #
-# supervisor template for nodejs
+# supervisor conf template
 #
 
 [program:itranswarp]
 
-command      = /usr/lib/jvm/java-11-openjdk-amd64/bin/java -Xmx{{ xmx }}m -Xms{{ xmx }}m -jar itranswarp.jar
+command      = /usr/bin/java -Xmx{{ xmx }}m -Xms{{ xmx }}m -jar itranswarp.jar
 environment  = {% for k, v in env.items() %}{{ k }}="{{ v }}",{% endfor %}PROFILES="{{ profile }}"
 directory    = /srv/itranswarp
 user         = www-data
@@ -12,6 +12,6 @@ startsecs    = 10
 startretries = 10
 
 redirect_stderr         = true
-stdout_logfile_maxbytes = 50MB
-stdout_logfile_backups  = 10
+stdout_logfile_maxbytes = 10MB
+stdout_logfile_backups  = 5
 stdout_logfile          = /var/log/supervisor/itranswarp.log

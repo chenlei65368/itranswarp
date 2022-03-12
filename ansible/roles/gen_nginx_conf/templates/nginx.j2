@@ -2,9 +2,9 @@
 
 # define upstream:
 upstream itw_upstream {
-{% for host in groups["itranswarp"] %}
+  {% for host in groups["itranswarp"] %}
     server {% if inventory_hostname == host %}127.0.0.1{% else %}{{ host }}{% endif %}:2019 fail_timeout=3s;
-{% endfor %}
+  {% endfor %}
 }
 
 # define access log format:
@@ -70,7 +70,10 @@ server {
 	}
 
 	location = /robots.txt {
-		expires 10d;
+		expires 1d;
+	}
+
+	location = /ads.txt {
 	}
 
 	location ~ /static/ {
@@ -122,7 +125,7 @@ server {
 	rewrite ^/cdn/(.+)$ /$1 last;
 
 	location ~ /static/ {
-		expires    300d;
+		expires 300d;
 	}
 
 	location ~ /files/ {
@@ -137,7 +140,7 @@ server {
 		proxy_cache_key   $uri;
 		proxy_cache_valid 300d;
 
-		expires    300d;
+		expires 300d;
 	}
 }
 
@@ -151,6 +154,7 @@ server {
 	ssl_certificate     /srv/itranswarp/ssl/static.{{ env.DOMAIN }}.crt;
 	ssl_certificate_key /srv/itranswarp/ssl/static.{{ env.DOMAIN }}.key;
 
+	root       /srv/itranswarp/www;
 	access_log /var/log/nginx/static_access.log access_format;
 	error_log  /var/log/nginx/static_error.log;
 
@@ -165,7 +169,8 @@ server {
 
 	location ~ /static/ {
 		if ($request_method ~* "(GET|POST)") {
-			add_header "Access-Control-Allow-Origin"  *;
+			add_header "Access-Control-Allow-Origin" "https://www.{{ env.DOMAIN }}";
+			expires 300d;
 		}
 
 		if ($request_method = OPTIONS ) {
@@ -175,25 +180,22 @@ server {
 			expires 300d;
 			return 200;
 		}
-
-		proxy_pass         https://source.{{ env.DOMAIN }};
-		proxy_read_timeout 3s;
 	}
 
 	location ~ /files/ {
-		if ($request_method ~* "(GET|POST)") {
-			add_header "Access-Control-Allow-Origin"  *;
-		}
+		add_header "Access-Control-Allow-Origin" "https://www.{{ env.DOMAIN }}";
 
-		if ($request_method = OPTIONS ) {
-			add_header "Access-Control-Allow-Origin"  "https://www.{{ env.DOMAIN }}";
-			add_header "Access-Control-Allow-Methods" "GET, POST, OPTIONS, HEAD";
-			add_header "Access-Control-Allow-Headers" "Authorization, Origin, X-Requested-With, Content-Type, Accept";
-			expires 300d;
-			return 200;
-		}
-
-		proxy_pass         https://source.{{ env.DOMAIN }};
+		proxy_pass         http://itw_upstream;
+		proxy_set_header   Host $host;
+		proxy_set_header   X-Real-IP $remote_addr;
+		proxy_set_header   X-Forwarded-Proto $scheme;
+		proxy_set_header   X-Forwarded-For $proxy_add_x_forwarded_for;
 		proxy_read_timeout 3s;
+
+		proxy_cache       itw_cache;
+		proxy_cache_key   $uri;
+		proxy_cache_valid 300d;
+
+		expires 300d;
 	}
 }
