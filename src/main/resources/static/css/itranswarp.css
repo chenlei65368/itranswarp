@@ -373,13 +373,27 @@ pre.ascii {
     padding: 10px 0;
     border: none;
     background-color: transparent;
-    font-family: "Courier New", Consolas, monospace !important;
+    font-family: JetBrainsMono, "Courier New", Consolas, monospace !important;
     word-break: normal !important;
 }
 
 pre>code {
     white-space: pre-wrap;
     word-break: break-all;
+}
+
+pre.ascii>code {
+	white-space: pre;
+}
+
+:not(pre) > code, :not(pre) > kbd, :not(pre) > samp {
+    font-size: 14px;
+    color: #333;
+    padding: 0 4px;
+    border: 1px solid #ccc;
+    border-radius: 3px;
+    margin-left: 4px;
+    margin-right: 4px;
 }
 
 a, .uk-link, .uk-tab>li>a {

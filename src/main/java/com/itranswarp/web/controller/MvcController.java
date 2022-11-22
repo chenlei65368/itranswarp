@@ -1,7 +1,12 @@
 package com.itranswarp.web.controller;
 
 import java.io.IOException;
+import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
+import java.security.SignatureException;
 import java.time.LocalDate;
+import java.time.ZonedDateTime;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -22,19 +27,25 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.servlet.LocaleResolver;
 import org.springframework.web.servlet.ModelAndView;
 import org.springframework.web.servlet.view.RedirectView;
+import org.web3j.crypto.Keys;
+import org.web3j.crypto.Sign;
+import org.web3j.crypto.Sign.SignatureData;
+import org.web3j.utils.Numeric;
 
 import com.itranswarp.Application;
+import com.itranswarp.bean.setting.Website;
 import com.itranswarp.common.ApiException;
 import com.itranswarp.enums.ApiError;
 import com.itranswarp.enums.RefType;
 import com.itranswarp.enums.Role;
-import com.itranswarp.markdown.Markdown;
 import com.itranswarp.model.AdMaterial;
 import com.itranswarp.model.AdPeriod;
 import com.itranswarp.model.AdSlot;
 import com.itranswarp.model.Article;
 import com.itranswarp.model.Board;
 import com.itranswarp.model.Category;
+import com.itranswarp.model.EthAuth;
+import com.itranswarp.model.Headline;
 import com.itranswarp.model.LocalAuth;
 import com.itranswarp.model.OAuth;
 import com.itranswarp.model.Reply;
@@ -46,15 +57,13 @@ import com.itranswarp.model.WikiPage;
 import com.itranswarp.oauth.OAuthAuthentication;
 import com.itranswarp.oauth.OAuthProviders;
 import com.itranswarp.oauth.provider.AbstractOAuthProvider;
-import com.itranswarp.search.AbstractSearcher;
-import com.itranswarp.search.SearchableDocument;
+import com.itranswarp.search.Hits;
 import com.itranswarp.service.ViewService;
 import com.itranswarp.util.CookieUtil;
 import com.itranswarp.util.HashUtil;
 import com.itranswarp.util.HttpUtil;
 import com.itranswarp.warpdb.PagedResults;
 import com.itranswarp.web.filter.HttpContext;
-import com.itranswarp.web.view.i18n.Translators;
 
 /**
  * Mvc controller for all page views.
@@ -67,35 +76,23 @@ public class MvcController extends AbstractController {
     @Value("#{applicationConfiguration.name}")
     String name;
 
-    @Value("#{applicationConfiguration.cdnMaster}")
-    String cdnMaster;
-
-    @Value("#{applicationConfiguration.cdnSlave}")
-    String cdnSlave;
-
-    @Value("#{applicationConfiguration.profiles eq 'native'}")
+    @Value("#{applicationConfiguration.dev}")
     Boolean dev;
 
     @Value("${spring.signin.password.enabled}")
     boolean passauthEnabled;
 
-    @Autowired
-    Translators translators;
+    @Value("${spring.signin.eth.enabled}")
+    boolean ethauthEnabled;
 
     @Autowired
     LocaleResolver localeResolver;
-
-    @Autowired
-    Markdown markdown;
 
     @Autowired
     OAuthProviders oauthProviders;
 
     @Autowired
     ViewService viewService;
-
-    @Autowired(required = false)
-    AbstractSearcher searcher;
 
     ///////////////////////////////////////////////////////////////////////////////////////////////
     // index
@@ -122,18 +119,26 @@ public class MvcController extends AbstractController {
     }
 
     @GetMapping("/search")
-    public ModelAndView search(@RequestParam(value = "q", defaultValue = "") String q, @RequestParam(value = "page", defaultValue = "1") int page,
-            HttpServletResponse response) throws Exception {
-        if (this.searcher == null) {
-            response.sendError(HttpServletResponse.SC_NOT_FOUND);
-            return null;
+    public ModelAndView search(@RequestParam(value = "q", defaultValue = "") String q, HttpServletResponse response) throws Exception {
+        if (!this.searcher.ready()) {
+            throw new ApiException(ApiError.INTERNAL_SERVER_ERROR, null, "Search is not enabled.");
         }
         q = q.strip();
-        PagedResults<SearchableDocument> pr = this.searcher.search(q, page);
-        if (pr == null) {
-            return prepareModelAndView("search.html");
+        if (q.isEmpty()) {
+            return prepareModelAndView("search.html", Map.of("q", q, "qs", List.of(), "hits", Hits.empty(), "time", "0"));
         }
-        return prepareModelAndView("search.html", Map.of("q", q, "page", pr.page, "results", pr.results));
+        long startTime = System.currentTimeMillis();
+        Hits hits = Hits.empty();
+        List<String> qs = this.searcher.parseQuery(q);
+        if (qs == null) {
+            qs = List.of();
+        }
+        if (!qs.isEmpty()) {
+            logger.info("search keywords: {} -> {}", q, String.join(", ", qs));
+            hits = this.searcher.search(qs, 25);
+        }
+        return prepareModelAndView("search.html",
+                Map.of("q", q, "qs", qs, "hits", hits, "time", String.format("%.3f", (System.currentTimeMillis() - startTime) / 1000.0)));
     }
 
     @GetMapping("/ref/{refType}/" + ID)
@@ -155,6 +160,22 @@ public class MvcController extends AbstractController {
         default:
         }
         return notFound();
+    }
+
+    ///////////////////////////////////////////////////////////////////////////////////////////////
+    // headline
+    ///////////////////////////////////////////////////////////////////////////////////////////////
+
+    @GetMapping("/headline")
+    public ModelAndView headlines(@RequestParam(value = "page", defaultValue = "1") int pageIndex) {
+        PagedResults<Headline> pr = headlineService.getPublishedHeadlines(pageIndex);
+        List<Headline> headlines = pr.getResults();
+        return prepareModelAndView("headline.html", Map.of("page", pr.page, "headlines", headlines));
+    }
+
+    @GetMapping("/headline/create")
+    public ModelAndView headlineCreate() {
+        return prepareModelAndView("headline_form.html");
     }
 
     ///////////////////////////////////////////////////////////////////////////////////////////////
@@ -308,7 +329,7 @@ public class MvcController extends AbstractController {
     }
 
     @GetMapping("/discuss/topic/" + ID + "/find/" + ID2)
-    public ModelAndView discussFindReplyInTopic(@PathVariable("id") Long topicId, @PathVariable("id2") Long replyId) {
+    public ModelAndView discussFindReplyInTopic(@PathVariable("id") long topicId, @PathVariable("id2") long replyId) {
         Reply reply = boardService.getReplyById(replyId);
         if (reply.topicId != topicId) {
             return notFound();
@@ -352,7 +373,7 @@ public class MvcController extends AbstractController {
     ///////////////////////////////////////////////////////////////////////////////////////////////
 
     @GetMapping("/auth/signin")
-    public ModelAndView signin(@RequestParam(value = "type", defaultValue = "") String type) {
+    public ModelAndView signin(@RequestParam(value = "type", defaultValue = "") String type, HttpServletRequest request) {
         boolean oauthEnabled = !this.oauthProviders.getOAuthProviders().isEmpty();
         boolean passauthEnabled = this.passauthEnabled;
         if (!oauthEnabled && !passauthEnabled) {
@@ -370,11 +391,14 @@ public class MvcController extends AbstractController {
         if (type.isEmpty() && passauthEnabled) {
             type = "passauth";
         }
-        return prepareModelAndView("signin.html", Map.of("type", type, "oauthEnabled", oauthEnabled, "passauthEnabled", passauthEnabled, "oauthConfigurations",
-                this.oauthProviders.getOAuthConfigurations()));
+        if (type.isEmpty() && ethauthEnabled) {
+            type = "ethauth";
+        }
+        return prepareModelAndView("signin.html", Map.of("type", type, "oauthEnabled", oauthEnabled, "passauthEnabled", passauthEnabled, "ethauthEnabled",
+                ethauthEnabled, "oauthConfigurations", this.oauthProviders.getOAuthConfigurations()));
     }
 
-    @PostMapping("/auth/signin")
+    @PostMapping("/auth/signin/local")
     public ModelAndView signinLocal(@RequestParam("email") String email, @RequestParam("passwd") String password, HttpServletRequest request,
             HttpServletResponse response) {
         if (!this.passauthEnabled) {
@@ -406,8 +430,58 @@ public class MvcController extends AbstractController {
     }
 
     private ModelAndView passwordAuthFailed() {
-        return prepareModelAndView("signin.html",
-                Map.of("type", "passauth", "oauthConfigurations", this.oauthProviders.getOAuthConfigurations(), "error", Boolean.TRUE));
+        boolean oauthEnabled = !this.oauthProviders.getOAuthProviders().isEmpty();
+        return prepareModelAndView("signin.html", Map.of("type", "passauth", "oauthEnabled", oauthEnabled, "passauthEnabled", passauthEnabled, "ethauthEnabled",
+                ethauthEnabled, "oauthConfigurations", this.oauthProviders.getOAuthConfigurations(), "error", Boolean.TRUE));
+    }
+
+    @PostMapping("/auth/signin/eth")
+    public ModelAndView signinByEth(@RequestParam("message") String message, @RequestParam("signature") String signature, HttpServletRequest request,
+            HttpServletResponse response) {
+        if (signature.length() != 132) {
+            throw new ApiException(ApiError.AUTH_SIGNIN_FAILED, null, "Signin by Web3 failed.");
+        }
+        int n = message.indexOf("\r\n");
+        if (n == -1) {
+            throw new ApiException(ApiError.AUTH_SIGNIN_FAILED, null, "Signin by Web3 failed.");
+        }
+        String line1 = message.substring(0, n);
+        if (!line1.equals("Signin: " + request.getServerName())) {
+            throw new ApiException(ApiError.AUTH_SIGNIN_FAILED, null, "Signin by Web3 failed.");
+        }
+        String expiresStr = message.substring(n + 2);
+        if (!expiresStr.startsWith("Expires: ")) {
+            throw new ApiException(ApiError.AUTH_SIGNIN_FAILED, null, "Signin by Web3 failed.");
+        }
+        long expires = ZonedDateTime.parse(expiresStr.substring(9)).toEpochSecond() * 1000;
+        if (expires - 3600000 < System.currentTimeMillis()) {
+            throw new ApiException(ApiError.AUTH_SIGNIN_FAILED, null, "Signin by Web3 failed.");
+        }
+        // check signature:
+        byte[] sign = Numeric.hexStringToByteArray(signature);
+        if (sign.length != 65) {
+            throw new ApiException(ApiError.AUTH_SIGNIN_FAILED, null, "Signin by Web3 failed.");
+        }
+        byte[] r = Arrays.copyOfRange(sign, 0, 32);
+        byte[] s = Arrays.copyOfRange(sign, 32, 64);
+        byte[] v = Arrays.copyOfRange(sign, 64, 65);
+        SignatureData signatureData = new SignatureData(v, r, s);
+        BigInteger pubKey = null;
+        try {
+            pubKey = Sign.signedPrefixedMessageToKey(message.getBytes(StandardCharsets.UTF_8), signatureData);
+        } catch (SignatureException e) {
+            throw new ApiException(ApiError.AUTH_SIGNIN_FAILED, null, "Invalid signature.");
+        }
+        String address = Keys.getAddress(pubKey);
+        if (!address.startsWith("0x")) {
+            address = "0x" + address;
+        }
+        logger.info("recover address: {}", address);
+        EthAuth ethAuth = this.userService.getEthAuth(address, expires);
+        // set cookie:
+        String cookieStr = CookieUtil.encodeSessionCookie(ethAuth, expires, encryptService.getSessionHmacKey());
+        CookieUtil.setSessionCookie(request, response, cookieStr, (int) ((expires - System.currentTimeMillis()) / 1000));
+        return new ModelAndView("redirect:" + HttpUtil.getReferer(request));
     }
 
     @GetMapping("/auth/from/{authProviderId}")
@@ -485,7 +559,8 @@ public class MvcController extends AbstractController {
     }
 
     private void appendGlobalModel(ModelAndView mv) {
-        HttpContext ctx = HttpContext.getContext();
+        final HttpContext ctx = HttpContext.getContext();
+        final Website website = settingService.getWebsiteFromCache();
         // development mode?
         mv.addObject("__dev__", this.dev);
         // application name:
@@ -498,17 +573,17 @@ public class MvcController extends AbstractController {
         mv.addObject("__scheme__", ctx.scheme);
         mv.addObject("__host__", ctx.host);
         mv.addObject("__url__", ctx.url);
-        // cdn:
-        mv.addObject("__cdn_master__", this.cdnMaster);
-        mv.addObject("__cdn_slave__", this.cdnSlave);
         // timestamp as millis:
         mv.addObject("__timestamp__", ctx.timestamp);
         // settings:
-        mv.addObject("__website__", settingService.getWebsiteFromCache());
+        mv.addObject("__website__", website);
         mv.addObject("__snippet__", settingService.getSnippetFromCache());
         mv.addObject("__follows__", settingService.getFollowFromCache().getFollows());
+        // CDN:
         // navigation menus:
         mv.addObject("__navigations__", navigationService.getNavigationsFromCache());
+        // can search?
+        mv.addObject("__searchable__", this.searcher.ready());
         // ads:
         mv.addObject("__ads__", adService.getAdInfoFromCache());
         // supported languages:

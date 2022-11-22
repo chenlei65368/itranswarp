@@ -9,7 +9,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.servlet.LocaleResolver;
@@ -21,12 +20,8 @@ import com.itranswarp.bean.setting.SettingDefinition;
 import com.itranswarp.common.ApiException;
 import com.itranswarp.enums.ApiError;
 import com.itranswarp.enums.Role;
-import com.itranswarp.markdown.Markdown;
 import com.itranswarp.model.User;
-import com.itranswarp.redis.RedisService;
-import com.itranswarp.search.AbstractSearcher;
 import com.itranswarp.web.filter.HttpContext;
-import com.itranswarp.web.view.i18n.Translators;
 
 @Controller
 @RequestMapping("/manage")
@@ -39,19 +34,7 @@ public class ManageController extends AbstractController {
     Boolean dev;
 
     @Autowired
-    Translators translators;
-
-    @Autowired
     LocaleResolver localeResolver;
-
-    @Autowired
-    Markdown markdown;
-
-    @Autowired
-    RedisService redisService;
-
-    @Autowired(required = false)
-    AbstractSearcher searcher;
 
     @GetMapping("/")
     public String index() {
@@ -91,6 +74,21 @@ public class ManageController extends AbstractController {
     @GetMapping("/ad/admaterial_list")
     public ModelAndView adMaterialList(@RequestParam(value = "page", defaultValue = "1") int pageIndex) {
         return prepareModelAndView("manage/ad/admaterial_list.html", Map.of("page", pageIndex));
+    }
+
+    ///////////////////////////////////////////////////////////////////////////////////////////////
+    // headlines
+    ///////////////////////////////////////////////////////////////////////////////////////////////
+
+    @GetMapping("/headline/")
+    public ModelAndView headlineList(@RequestParam(value = "published", defaultValue = "false") boolean published,
+            @RequestParam(value = "page", defaultValue = "1") int pageIndex) {
+        return prepareModelAndView("manage/headline/headline_list.html", Map.of("published", published, "page", pageIndex));
+    }
+
+    @GetMapping("/headline/headline_update")
+    public ModelAndView headlineUpdate(@RequestParam("id") long id) {
+        return prepareModelAndView("manage/headline/headline_form.html", Map.of("id", id, "action", "/api/headlines/" + id));
     }
 
     ///////////////////////////////////////////////////////////////////////////////////////////////
@@ -297,13 +295,7 @@ public class ManageController extends AbstractController {
 
     @GetMapping("/search/")
     public ModelAndView searchStatus() {
-        return prepareModelAndView("manage/search/search_status.html",
-                Map.of("searchEnabled", searcher != null, "searchEngineName", searcher == null ? "None" : searcher.getEngineName()));
-    }
-
-    @PostMapping("/search/reindex")
-    public ModelAndView searchReindex() {
-        return prepareModelAndView("manage/search/search_reindex.html");
+        return prepareModelAndView("manage/search/search_status.html", Map.of("searchReady", searcher.ready(), "searchEngineName", searcher.getEngineName()));
     }
 
     ///////////////////////////////////////////////////////////////////////////////////////////////

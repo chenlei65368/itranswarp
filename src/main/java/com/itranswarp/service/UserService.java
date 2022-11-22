@@ -8,11 +8,13 @@ import java.util.concurrent.TimeUnit;
 import org.apache.commons.validator.routines.EmailValidator;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+import org.web3j.crypto.Keys;
 
 import com.itranswarp.common.ApiException;
 import com.itranswarp.enums.ApiError;
 import com.itranswarp.enums.Role;
 import com.itranswarp.model.AbstractEntity;
+import com.itranswarp.model.EthAuth;
 import com.itranswarp.model.LocalAuth;
 import com.itranswarp.model.OAuth;
 import com.itranswarp.model.User;
@@ -44,7 +46,7 @@ public class UserService extends AbstractDbService<User> {
         return null;
     }
 
-    public User getEnabledUserById(Long id) {
+    public User getEnabledUserById(long id) {
         User user = this.getById(id);
         if (user.lockedUntil > System.currentTimeMillis()) {
             return null;
@@ -52,7 +54,7 @@ public class UserService extends AbstractDbService<User> {
         return user;
     }
 
-    public User getUserFromCache(Long id) {
+    public User getUserFromCache(long id) {
         User user = this.redisService.hget(KEY_USERS, id, User.class);
         if (user == null) {
             user = getById(id);
@@ -94,6 +96,32 @@ public class UserService extends AbstractDbService<User> {
     }
 
     @Transactional
+    public EthAuth getEthAuth(String address, long expires) {
+        EthAuth auth = this.db.from(EthAuth.class).where("address = ?", address).first();
+        if (auth == null) {
+            String checksumAddress = Keys.toChecksumAddress(address);
+            User user = new User();
+            user.id = IdUtil.nextId();
+            user.email = address + "@eth";
+            user.name = checksumAddress.substring(0, 8) + "..." + checksumAddress.substring(36);
+            user.imageUrl = "/static/img/eth.svg";
+            user.role = Role.SUBSCRIBER;
+
+            auth = new EthAuth();
+            auth.address = address;
+            auth.expiresAt = expires;
+            auth.userId = user.id;
+
+            this.db.insert(user);
+            this.db.insert(auth);
+        } else {
+            auth.expiresAt = expires;
+            this.db.update(auth);
+        }
+        return auth;
+    }
+
+    @Transactional
     public OAuth getOAuth(String authProviderId, OAuthAuthentication authentication) {
         OAuth oauth = this.db.from(OAuth.class).where("authProviderId = ? AND authId = ?", authProviderId, authentication.getAuthenticationId()).first();
         if (oauth == null) {
@@ -106,7 +134,7 @@ public class UserService extends AbstractDbService<User> {
     }
 
     OAuth createOAuthUser(String authProviderId, OAuthAuthentication authentication) {
-        if ("local".equals(authProviderId)) {
+        if ("local".equals(authProviderId) || "eth".equals(authProviderId)) {
             throw new RuntimeException("Invalid provider: " + authProviderId);
         }
         User user = new User();
@@ -145,22 +173,26 @@ public class UserService extends AbstractDbService<User> {
         return user;
     }
 
-    public OAuth fetchOAuthById(String authProviderId, Long id) {
+    public EthAuth fetchEthAuthById(long id) {
+        return this.db.from(EthAuth.class).where("id = ?", id).first();
+    }
+
+    public OAuth fetchOAuthById(String authProviderId, long id) {
         return this.db.from(OAuth.class).where("id = ? AND authProviderId = ?", id, authProviderId).first();
     }
 
-    public LocalAuth fetchLocalAuthById(Long id) {
+    public LocalAuth fetchLocalAuthById(long id) {
         return this.db.fetch(LocalAuth.class, id);
 
     }
 
-    public LocalAuth fetchLocalAuthByUserId(Long userId) {
+    public LocalAuth fetchLocalAuthByUserId(long userId) {
         return this.db.from(LocalAuth.class).where("userId = ?", userId).first();
 
     }
 
     @Transactional
-    public User updateUserRole(Long id, Role role) {
+    public User updateUserRole(long id, Role role) {
         User user = getById(id);
         if (user.role == Role.ADMIN) {
             throw new ApiException(ApiError.OPERATION_FAILED, "role", "Could not change admin role.");
@@ -173,7 +205,31 @@ public class UserService extends AbstractDbService<User> {
     }
 
     @Transactional
-    public User updateUserLockedUntil(Long id, long ts) {
+    public User updateUserPassword(long userId, String password) {
+        if (password.length() != 64) {
+            throw new ApiException(ApiError.PARAMETER_INVALID, "password", "Invalid hash of password.");
+        }
+        User user = fetchById(userId);
+        if (user == null) {
+            throw new ApiException(ApiError.OPERATION_FAILED, "userId", "User not found.");
+        }
+        LocalAuth lauth = this.fetchLocalAuthByUserId(userId);
+        if (lauth == null) {
+            // no password:
+            throw new ApiException(ApiError.OPERATION_FAILED, "userId", "Could not set password for non-local user.");
+        }
+        // generate new password auth:
+        LocalAuth newLAuth = new LocalAuth();
+        newLAuth.userId = userId;
+        newLAuth.salt = RandomUtil.createRandomString(64);
+        newLAuth.passwd = HashUtil.hmacSha256(password, newLAuth.salt);
+        this.db.remove(lauth);
+        this.db.insert(newLAuth);
+        return user;
+    }
+
+    @Transactional
+    public User updateUserLockedUntil(long id, long ts) {
         User user = getById(id);
         if (user.role == Role.ADMIN) {
             throw new ApiException(ApiError.OPERATION_FAILED, null, "Could not lock admin user.");
@@ -192,7 +248,7 @@ public class UserService extends AbstractDbService<User> {
         this.db.updateProperties(user, "lockedUntil");
     }
 
-    public void clearUserFromCache(Long id) {
+    public void clearUserFromCache(long id) {
         this.redisService.hdel(KEY_USERS, id);
     }
 

@@ -10,11 +10,11 @@ spring:
     active: ${PROFILES:native}
   application:
     name: ${NAME:itranswarp}
+    domain: ${DOMAIN:localhost}
     # default to empty (use default timezone of server):
     timezone: ${TIMEZONE:}
-    cdn:
-      master: ${CDN_MASTER:https://cdn.jsdelivr.net/npm}
-      slave: ${CDN_SLAVE:https://unpkg.com}
+    # dev mode?
+    dev: ${DEV:false}
 
   # mysql configuration:
   datasource:
@@ -27,7 +27,8 @@ spring:
       auto-commit: false
       connection-timeout: ${DB_TIMEOUT:3000}
       validation-timeout: ${DB_TIMEOUT:3000}
-      max-lifetime: ${DB_MAX_LIFETIME:600000}
+      idle-timeout: ${DB_IDLE_TIMEOUT:600000}
+      max-lifetime: ${DB_MAX_LIFETIME:1800000}
       maximum-pool-size: ${DB_POOL_SIZE:100}
       minimum-idle: ${DB_MIN_IDLE:1}
 
@@ -79,20 +80,16 @@ spring:
 
   # search configurations:
   search:
-    lucene:
-      enabled: ${LUCENE_ENABLED:false}
-      index-dir: ${LUCENE_INDEX_DIR:/var/search-index}
-    elastic:
-      enabled: ${ELASTIC_SEARCH_ENABLED:false}
-      url: ${ELASTIC_SEARCH_URL:http://localhost:9200}
-      user: ${ELASTIC_SEARCH_USER:}
-      password: ${ELASTIC_SEARCH_PASSWORD:}
+    redisearch:
+      default-language: ${REDISEARCH_DEFAULT_LANGUAGE:CHINESE}
 
   # 3rd-party signin configurations:
   signin:
     password:
       # enable password signin:
       enabled: ${SIGNIN_PASSWORD_ENABLED:true}
+    eth:
+      enabled: ${SIGNIN_ETH_ENABLED:true}
     # oauth authentication configuration:
     # - name: display name
     # - icon: icon name, check https://getuikit.com/v2/docs/icon.html
@@ -137,7 +134,7 @@ spring:
         client-secret: "${OAUTH_QQ_CLIENT_SECRET:}"
       twitter:
         name:          "${OAUTH_TWITTER_NAME:Twitter}"
-        icon:          "${OAUTH_TWITTER_ICON:facebook}"
+        icon:          "${OAUTH_TWITTER_ICON:twitter}"
         color:         "${OAUTH_TWITTER_COLOR:#1da1f2}"
         client-id:     "${OAUTH_TWITTER_CLIENT_ID:}"
         client-secret: "${OAUTH_TWITTER_CLIENT_SECRET:}"
@@ -147,12 +144,6 @@ spring:
         color:         "${OAUTH_WEIBO_COLOR:#e92b00}"
         client-id:     "${OAUTH_WEIBO_CLIENT_ID:}"
         client-secret: "${OAUTH_WEIBO_CLIENT_SECRET:}"
-      yahoo:
-        name:          "${OAUTH_YAHOO_NAME:Yahoo}"
-        icon:          "${OAUTH_YAHOO_ICON:yahoo}"
-        color:         "${OAUTH_YAHOO_COLOR:#720e9e}"
-        client-id:     "${OAUTH_YAHOO_CLIENT_ID:}"
-        client-secret: "${OAUTH_YAHOO_CLIENT_SECRET:}"
 
   # external configuration:
   external:
@@ -164,5 +155,9 @@ spring:
       timeout: ${REMOTE_CODE_RUNNER_TIMEOUT:10}
       max-concurrent: ${REMOTE_CODE_RUNNER_MAX_CONCURRENT:10}
 
+# default logging level:
+logging:
+  level:
+    root: ${LOGGING_ROOT:INFO}
+
 # END
-    

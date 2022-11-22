@@ -56,77 +56,18 @@
 	<!-- meta here -->
 	{% endblock %}
 
-	<!-- BEGIN CSS -->
-	<link rel="stylesheet" href="{{ __cdn_master__ }}/uikit@2.27.4/vendor/codemirror/codemirror.css">
-	<link rel="stylesheet" href="{{ __cdn_master__ }}/uikit@2.27.4/vendor/highlight/highlight.css">
-	<link rel="stylesheet" href="{{ __cdn_master__ }}/katex@0.15.1/dist/katex.min.css">
-	<link rel="stylesheet" href="{{ __cdn_master__ }}/simditor@2.3.22/styles/simditor.css">
-	<link rel="stylesheet" href="{{ __cdn_master__ }}/uikit@2.27.4/dist/css/uikit.min.css">
-	<link rel="stylesheet" href="{{ __cdn_master__ }}/uikit@2.27.4/dist/css/uikit.almost-flat.css">
-	<!-- END CSS -->
-
-	<!-- BEGIN JAVASCRIPT -->
-	<script src="{{ __cdn_master__ }}/jquery@2.1.4/dist/jquery.min.js"></script>
-	<script src="{{ __cdn_master__ }}/underscore@1.12.1/underscore-min.js"></script>
-	<script src="{{ __cdn_master__ }}/moment@2.29.1/min/moment-with-locales.min.js"></script>
-	<script src="{{ __cdn_master__ }}/uikit@2.27.4/vendor/codemirror/codemirror.js"></script>
-	<script src="{{ __cdn_master__ }}/uikit@2.27.4/vendor/highlight/highlight.js"></script>
-	<script src="{{ __cdn_master__ }}/uikit@2.27.4/vendor/commonmark.js"></script>
-	<script src="{{ __cdn_master__ }}/katex@0.15.1/dist/katex.min.js"></script>
-	<script src="{{ __cdn_master__ }}/simple-module@2.0.6/lib/module.js"></script>
-	<script src="{{ __cdn_master__ }}/simple-hotkeys@1.0.3/lib/hotkeys.js"></script>
-	<script src="{{ __cdn_master__ }}/simditor@2.3.22/lib/simditor.js"></script>
-	<script src="{{ __cdn_master__ }}/turndown@7.1.1/dist/turndown.js"></script>
-	<script src="{{ __cdn_master__ }}/uikit@2.27.4/dist/js/uikit.min.js"></script>
-	<script src="{{ __cdn_master__ }}/uikit@2.27.4/dist/js/components/tooltip.min.js"></script>
-	<script src="{{ __cdn_master__ }}/uikit@2.27.4/dist/js/components/slideshow.min.js"></script>
-	<script src="{{ __cdn_master__ }}/uikit@2.27.4/dist/js/components/datepicker.min.js"></script>
-	<script src="{{ __cdn_master__ }}/uikit@2.27.4/dist/js/components/autocomplete.min.js"></script>
-	<script src="{{ __cdn_master__ }}/uikit@2.27.4/dist/js/components/notify.js"></script>
-	<script src="{{ __cdn_master__ }}/uikit@2.27.4/dist/js/components/lightbox.min.js"></script>
-	<script src="{{ __cdn_master__ }}/uikit@2.27.4/dist/js/components/htmleditor.min.js"></script>
-	<!-- END JAVASCRIPT -->
-
-	<script>
-		function writeCss(path) {
-			document.write('<link rel="stylesheet" href="{{ __cdn_slave__ }}' + path + '">');
-		}
-		function writeJs(path) {
-			document.write('<scr' + 'ipt src="{{ __cdn_slave__ }}' + path + '"></scr' + 'ipt>');
-		}
-
-		if (window.jQuery === undefined && '{{ __cdn_slave__ }}' != '') {
-			console.log('resource from jsdelivr not loaded. try other source...');
-			writeCss('/uikit@2.27.4/vendor/codemirror/codemirror.css');
-			writeCss('/uikit@2.27.4/vendor/highlight/highlight.css');
-			writeCss('/katex@0.15.1/dist/katex.min.css');
-			writeCss('/simditor@2.3.22/styles/simditor.css');
-			writeCss('/uikit@2.27.4/dist/css/uikit.min.css');
-			writeCss('/uikit@2.27.4/dist/css/uikit.almost-flat.css');
-
-			writeJs('/jquery@2.1.4/dist/jquery.min.js');
-			writeJs('/underscore@1.12.1/underscore-min.js');
-			writeJs('/moment@2.29.1/min/moment-with-locales.min.js');
-			writeJs('/uikit@2.27.4/vendor/codemirror/codemirror.js');
-			writeJs('/uikit@2.27.4/vendor/highlight/highlight.js');
-			writeJs('/uikit@2.27.4/vendor/commonmark.js');
-			writeJs('/katex@0.15.1/dist/katex.min.js');
-			writeJs('/simple-module@2.0.6/lib/module.js');
-			writeJs('/simple-hotkeys@1.0.3/lib/hotkeys.js');
-			writeJs('/simditor@2.3.22/lib/simditor.js');
-			writeJs('/turndown@7.1.1/dist/turndown.js');
-			writeJs('/uikit@2.27.4/dist/js/uikit.min.js');
-			writeJs('/uikit@2.27.4/dist/js/components/tooltip.min.js');
-			writeJs('/uikit@2.27.4/dist/js/components/slideshow.min.js');
-			writeJs('/uikit@2.27.4/dist/js/components/datepicker.min.js');
-			writeJs('/uikit@2.27.4/dist/js/components/autocomplete.min.js');
-			writeJs('/uikit@2.27.4/dist/js/components/notify.js');
-			writeJs('/uikit@2.27.4/dist/js/components/lightbox.min.js');
-			writeJs('/uikit@2.27.4/dist/js/components/htmleditor.min.js');
-		}
-	</script>
+	{% include("_inc_static.html") %}
 
 	<link rel="stylesheet" href="/static/css/itranswarp.css?v={{ __version__ }}">
+
+	<!-- override font family -->
+	<style>
+	{% if __website__.customFont != "" %}
+	html,body,h1,h2,h3,h4,h5,h6,.uk-navbar-nav>li>a {
+		font-family: {{ __website__.customFont|raw }}
+	}
+	{% endif %}
+	</style>
 
 	<script src="/static/js/shared.js?v={{ __version__ }}"></script>
 	<script src="/static/js/itranswarp.js?v={{ __version__ }}"></script>
@@ -139,7 +80,7 @@
 			display: none;
 		}
 
-		/* {% if __user__ !=null %} */
+		/* {% if __user__ != null %} */
 
 		.x-display-if-not-signin {
 			display: none;
@@ -273,25 +214,19 @@
 
 				<div id="navbar-user-info" class="uk-navbar-flip">
 					<ul class="uk-navbar-nav">
-
-						<!--
-						<li>
-							<form action="/search" class="uk-form uk-display-inline-block uk-visible-small" style="margin: 8px 8px">
-								<div class="uk-form-icon">
-									<i class="uk-icon-search"></i>
-									<input type="text" name="q" placeholder="Search" class="uk-form-width-small">
-								</div>
-							</form>
+						{% if __searchable__ %}
+						<li class="uk-visible-small">
+							<a href="/search"><i class="uk-icon-search"></i></a>
 						</li>
-						<li>
-							<form action="/search" class="uk-form uk-display-inline-block uk-hidden-small" style="margin: 8px 8px">
+						<li class="uk-hidden-small">
+							<form action="/search" class="uk-form uk-display-inline-block" style="margin: 8px 8px">
 								<div class="uk-form-icon">
 									<i class="uk-icon-search"></i>
 									<input type="text" name="q" placeholder="Search" class="uk-form-width-medium">
 								</div>
 							</form>
 						</li>
--->
+						{% endif %}
 
 						<li class="uk-parent x-display-if-signin" data-uk-dropdown>
 							<a href="#0"><i class="uk-icon-user"></i><span class="x-hidden-tiny">&nbsp;</span><span
@@ -299,41 +234,36 @@
 									endif %}</span></a>
 							<div class="uk-dropdown uk-dropdown-navbar">
 								<ul class="uk-nav uk-nav-navbar">
-									<li><a target="_blank" href="/profile"><i class="uk-icon-cog"></i> {{ _('Profile')
-											}}</a></li>
+									<li><a target="_blank" href="/profile"><i class="uk-icon-cog"></i> {{ _('Profile') }}</a></li>
 									<li class="uk-nav-divider"></li>
-									{% if __user__ != null and __user__.role.value <= 100 %} <li><a target="_blank"
-											href="/manage/"><i class="uk-icon-cogs"></i> {{ _('Manage') }}</a>
+									{% if __user__ != null and __user__.role.value <= 100 %}
+									<li><a target="_blank" href="/manage/"><i class="uk-icon-cogs"></i> {{ _('Manage') }}</a></li>
+									<li class="uk-nav-divider"></li>
+									{% endif %}
+									{% if __user__ != null and __user__.role.value == 1000 %}
+									<li><a target="_blank" href="/sponsor/adperiod"><i class="uk-icon-photo"></i> {{ _('Sponsor') }}</a></li>
+									<li class="uk-nav-divider"></li>
+									{% endif %}
+									<li><a href="/auth/signout"><i class="uk-icon-power-off"></i> {{ _('Sign Out') }}</a></li>
+								</ul>
+							</div>
 						</li>
-						<li class="uk-nav-divider"></li>
-						{% endif %}
-						{% if __user__ != null and __user__.role.value == 1000 %}
-						<li><a target="_blank" href="/sponsor/adperiod"><i class="uk-icon-photo"></i> {{ _('Sponsor')
-								}}</a></li>
-						<li class="uk-nav-divider"></li>
-						{% endif %}
-						<li><a href="/auth/signout"><i class="uk-icon-power-off"></i> {{ _('Sign Out') }}</a></li>
+						<li class="x-display-if-not-signin uk-hidden-small"><a href="/auth/signin"><i class="uk-icon-sign-in"></i> {{ _('Sign In') }}</a></li>
+						<li class="x-display-if-not-signin uk-visible-small"><a href="/auth/signin"><i class="uk-icon-sign-in"></i></a></li>
+						<li class="uk-parent" data-uk-dropdown>
+							<a href="#0"><i class="uk-icon-globe"></i></a>
+							<div class="uk-dropdown uk-dropdown-navbar">
+								<ul class="uk-nav uk-nav-navbar">
+									{% for l in __languages__ %}
+									<li><a href="/locale/{{ l.locale }}">{{ l.name }}</a></li>
+									{% endfor %}
+								</ul>
+							</div>
+						</li>
 					</ul>
 				</div>
-				</li>
-				<li class="x-display-if-not-signin uk-hidden-small"><a href="/auth/signin"><i
-							class="uk-icon-sign-in"></i> {{ _('Sign In') }}</a></li>
-				<li class="x-display-if-not-signin uk-visible-small"><a href="/auth/signin"><i
-							class="uk-icon-sign-in"></i></a></li>
-				<li class="uk-parent" data-uk-dropdown>
-					<a href="#0"><i class="uk-icon-globe"></i></a>
-					<div class="uk-dropdown uk-dropdown-navbar">
-						<ul class="uk-nav uk-nav-navbar">
-							{% for l in __languages__ %}
-							<li><a href="/locale/{{ l.locale }}">{{ l.name }}</a></li>
-							{% endfor %}
-						</ul>
-					</div>
-				</li>
-				</ul>
 			</div>
 		</div>
-	</div>
 	</div><!-- // header -->
 
 	<div id="main">

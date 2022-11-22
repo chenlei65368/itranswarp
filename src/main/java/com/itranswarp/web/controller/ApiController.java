@@ -1,9 +1,13 @@
 package com.itranswarp.web.controller;
 
+import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+
+import javax.servlet.http.HttpServletRequest;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -21,6 +25,7 @@ import com.itranswarp.bean.ArticleBean;
 import com.itranswarp.bean.AttachmentBean;
 import com.itranswarp.bean.BoardBean;
 import com.itranswarp.bean.CategoryBean;
+import com.itranswarp.bean.HeadlineBean;
 import com.itranswarp.bean.LinkBean;
 import com.itranswarp.bean.NavigationBean;
 import com.itranswarp.bean.ReplyBean;
@@ -45,6 +50,7 @@ import com.itranswarp.model.Article;
 import com.itranswarp.model.Attachment;
 import com.itranswarp.model.Board;
 import com.itranswarp.model.Category;
+import com.itranswarp.model.Headline;
 import com.itranswarp.model.Link;
 import com.itranswarp.model.Navigation;
 import com.itranswarp.model.Reply;
@@ -64,7 +70,13 @@ import com.itranswarp.web.support.RoleWith;
 public class ApiController extends AbstractController {
 
     @Value("${spring.security.anti-spam.lock-days:3650}")
-    int lockDaysForSpam = 0;
+    int lockDaysForSpam = 3650;
+
+    @Value("${spring.security.anti-spam.register-at-least:P7D}")
+    Duration registerAtLeast = Duration.ofDays(7);
+
+    @Value("${spring.security.anti-spam.frequency-per-minute:3}")
+    int freqPerMin = 3;
 
     ///////////////////////////////////////////////////////////////////////////////////////////////
     // ad
@@ -171,6 +183,65 @@ public class ApiController extends AbstractController {
     }
 
     ///////////////////////////////////////////////////////////////////////////////////////////////
+    // headline
+    ///////////////////////////////////////////////////////////////////////////////////////////////
+
+    @GetMapping("/headlines")
+    @RoleWith(Role.CONTRIBUTOR)
+    public PagedResults<Headline> headline(@RequestParam(value = "published", defaultValue = "false") boolean published,
+            @RequestParam(value = "page", defaultValue = "1") int pageIndex) {
+        return published ? this.headlineService.getPublishedHeadlines(pageIndex) : this.headlineService.getUnpublishedHeadlines(pageIndex);
+    }
+
+    @PostMapping("/headlines")
+    @RoleWith(Role.SUBSCRIBER)
+    public Map<String, Boolean> headlineCreate(@RequestBody HeadlineBean bean) {
+        User user = HttpContext.getRequiredCurrentUser();
+        if (user.role == Role.SUBSCRIBER && user.createdAt > (System.currentTimeMillis() - registerAtLeast.toMillis())) {
+            throw new ApiException(ApiError.USER_FORBIDDEN, null, "No permission to submit headline.");
+        }
+        this.headlineService.createHeadline(user.id, bean);
+        return API_RESULT_TRUE;
+    }
+
+    @GetMapping("/headlines/" + ID)
+    @RoleWith(Role.SUBSCRIBER)
+    public Headline headline(@PathVariable("id") long id) {
+        Headline h = this.headlineService.getHeadline(id);
+        if (!h.published) {
+            User user = HttpContext.getRequiredCurrentUser();
+            if (h.userId != user.id && user.role == Role.SUBSCRIBER) {
+                throw new ApiException(ApiError.USER_FORBIDDEN, null, "No permission to get headline.");
+            }
+        }
+        return h;
+    }
+
+    @PostMapping("/headlines/" + ID)
+    @RoleWith(Role.EDITOR)
+    public Headline headlineUpdate(@PathVariable("id") long id, @RequestBody HeadlineBean bean) {
+        Headline h = this.headlineService.updateHeadline(id, bean);
+        this.headlineService.deleteHeadlinesFromCache();
+        return h;
+    }
+
+    @PostMapping("/headlines/" + ID + "/delete")
+    @RoleWith(Role.EDITOR)
+    public Map<String, Boolean> headlineDelete(@PathVariable("id") long id) {
+        this.headlineService.deleteHeadline(id);
+        this.headlineService.deleteHeadlinesFromCache();
+        return API_RESULT_TRUE;
+    }
+
+    @PostMapping("/headlines/" + ID + "/publish")
+    @RoleWith(Role.EDITOR)
+    public Map<String, Boolean> headlinePublish(@PathVariable("id") long id) {
+        this.headlineService.publishHeadline(id);
+        this.headlineService.deleteHeadlinesFromCache();
+        return API_RESULT_TRUE;
+    }
+
+    ///////////////////////////////////////////////////////////////////////////////////////////////
     // article
     ///////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -193,6 +264,7 @@ public class ApiController extends AbstractController {
     public Article articleCreate(@RequestBody ArticleBean bean) {
         Article article = this.articleService.createArticle(HttpContext.getRequiredCurrentUser(), bean);
         this.articleService.deleteArticlesFromCache(article.categoryId);
+        asyncIndex(article);
         return article;
     }
 
@@ -201,6 +273,7 @@ public class ApiController extends AbstractController {
     public Article articleUpdate(@PathVariable("id") long id, @RequestBody ArticleBean bean) {
         Article article = this.articleService.updateArticle(HttpContext.getRequiredCurrentUser(), id, bean);
         this.articleService.deleteArticlesFromCache(article.categoryId);
+        asyncIndex(article);
         return article;
     }
 
@@ -209,6 +282,7 @@ public class ApiController extends AbstractController {
     public Map<String, Boolean> articleDelete(@PathVariable("id") long id) {
         Article article = this.articleService.deleteArticle(HttpContext.getRequiredCurrentUser(), id);
         this.articleService.deleteArticlesFromCache(article.categoryId);
+        asyncUnindex(id);
         return API_RESULT_TRUE;
     }
 
@@ -396,6 +470,7 @@ public class ApiController extends AbstractController {
     @RoleWith(Role.CONTRIBUTOR)
     public Map<String, List<NavigationMenu>> navigationUrls() {
         List<NavigationMenu> list = new ArrayList<>();
+        list.add(new NavigationMenu("Headline", "/headline"));
         this.articleService.getCategories().forEach(c -> {
             list.add(new NavigationMenu(c.name, "/category/" + c.id));
         });
@@ -446,49 +521,12 @@ public class ApiController extends AbstractController {
     // search
     ///////////////////////////////////////////////////////////////////////////////////////////////
 
-    private String KEY_REINDEX_STATUS = "__reindex_status__";
-    private String KEY_REINDEX_PROGRESS = "__reindex_progress__";
-
     @PostMapping("/search/reindex")
     @RoleWith(Role.ADMIN)
     public Map<String, Boolean> searchReindex() throws Exception {
-        if (this.redisService.get(KEY_REINDEX_STATUS) != null) {
-            throw new ApiException(ApiError.OPERATION_FAILED, "reindex", "Reindex is in progress...");
-        }
-        searchReindexAsync();
+        searcher.removeIndex();
+        searcher.createIndex();
         return API_RESULT_TRUE;
-    }
-
-    private void searchReindexAsync() throws Exception {
-        logger.warn("START reindex all documents...");
-        int indexedDocuments = 0;
-        this.redisService.set(KEY_REINDEX_PROGRESS, indexedDocuments);
-        this.redisService.set(KEY_REINDEX_STATUS, "indexing");
-        try {
-            logger.warn("reindex all articles...");
-            for (int i = 1; i < 100000; i++) {
-                PagedResults<Article> pr = this.articleService.getArticles(i);
-                if (pr.results.isEmpty()) {
-                    break;
-                }
-                this.searcher.indexArticles(pr.results.stream().toArray(Article[]::new));
-                indexedDocuments += pr.results.size();
-                this.redisService.set(KEY_REINDEX_PROGRESS, indexedDocuments);
-            }
-            logger.warn("END reindex all documents.");
-        } finally {
-            this.redisService.del(KEY_REINDEX_STATUS);
-        }
-    }
-
-    @GetMapping("/search/reindex")
-    @RoleWith(Role.ADMIN)
-    public Map<String, Object> searchReindexStatus() {
-        if (this.redisService.get(KEY_REINDEX_STATUS) == null) {
-            return Map.of("process", Boolean.FALSE);
-        }
-        var n = this.redisService.get(KEY_REINDEX_PROGRESS, Integer.class);
-        return Map.of("process", Boolean.TRUE, "progress", n);
     }
 
     ///////////////////////////////////////////////////////////////////////////////////////////////
@@ -613,6 +651,15 @@ public class ApiController extends AbstractController {
         return Map.of(RESULTS, this.boardService.getTopicsByRefId(refId));
     }
 
+    private void checkTopicSpam(User user) {
+        long start = System.currentTimeMillis() - 60_000;
+        int n = this.boardService.getRecentTopicCountByUser(user.id, start);
+        if (n >= this.freqPerMin) {
+            this.userService.lockUser(user, 60);
+            throw new ApiException(ApiError.OPERATION_FAILED, "topic", "rate limit");
+        }
+    }
+
     @PostMapping("/comments/{tag}")
     @RoleWith(Role.SUBSCRIBER)
     public Topic topicCreateByRefType(@PathVariable("tag") String tag, @RequestBody TopicBean bean) {
@@ -639,6 +686,7 @@ public class ApiController extends AbstractController {
         }
         Topic topic = null;
         User user = HttpContext.getRequiredCurrentUser();
+        checkTopicSpam(user);
         try {
             topic = this.boardService.createTopic(user, board, bean);
         } catch (ApiException e) {
@@ -679,6 +727,7 @@ public class ApiController extends AbstractController {
         }
         Topic topic = null;
         User user = HttpContext.getRequiredCurrentUser();
+        checkTopicSpam(user);
         try {
             topic = this.boardService.createTopic(user, board, bean);
         } catch (ApiException e) {
@@ -726,7 +775,12 @@ public class ApiController extends AbstractController {
 
     @GetMapping("/users/ids")
     @RoleWith(Role.CONTRIBUTOR)
-    public Map<Long, User> usersByIds(@RequestParam("id") long[] ids) {
+    public Map<Long, User> usersByIds(HttpServletRequest request) {
+        String[] idList = request.getParameterValues("id");
+        if (idList == null) {
+            return Map.of();
+        }
+        long[] ids = Arrays.stream(idList).mapToLong(Long::parseLong).toArray();
         List<User> users = this.userService.getUsersByIds(ids);
         return users.stream().collect(Collectors.toMap(u -> u.id, u -> u));
     }
@@ -744,6 +798,12 @@ public class ApiController extends AbstractController {
             throw new ApiException(ApiError.PARAMETER_INVALID, "timestamp", "Invalid timestamp.");
         }
         return this.userService.updateUserLockedUntil(id, timestamp);
+    }
+
+    @PostMapping("/users/" + ID + "/password")
+    @RoleWith(Role.ADMIN)
+    public User userUpdatePassword(@PathVariable("id") long id, @RequestBody UpdatePasswordBean bean) {
+        return this.userService.updateUserPassword(id, bean.password);
     }
 
     ///////////////////////////////////////////////////////////////////////////////////////////////
@@ -775,6 +835,7 @@ public class ApiController extends AbstractController {
     public Wiki wikiCreate(@RequestBody WikiBean bean) {
         Wiki wiki = this.wikiService.createWiki(HttpContext.getRequiredCurrentUser(), bean);
         this.wikiService.removeWikiFromCache(wiki.id);
+        asyncIndex(wiki);
         return wiki;
     }
 
@@ -783,6 +844,7 @@ public class ApiController extends AbstractController {
     public Wiki wikiUpdate(@PathVariable("id") long id, @RequestBody WikiBean bean) {
         Wiki wiki = this.wikiService.updateWiki(HttpContext.getRequiredCurrentUser(), id, bean);
         this.wikiService.removeWikiFromCache(id);
+        asyncIndex(wiki);
         return wiki;
     }
 
@@ -791,6 +853,7 @@ public class ApiController extends AbstractController {
     public Map<String, Boolean> wikiDelete(@PathVariable("id") long id) {
         this.wikiService.deleteWiki(HttpContext.getRequiredCurrentUser(), id);
         this.wikiService.removeWikiFromCache(id);
+        asyncUnindex(id);
         return API_RESULT_TRUE;
     }
 
@@ -800,6 +863,7 @@ public class ApiController extends AbstractController {
         Wiki wiki = this.wikiService.getById(id);
         WikiPage wikiPage = this.wikiService.createWikiPage(HttpContext.getRequiredCurrentUser(), wiki, bean);
         this.wikiService.removeWikiFromCache(id);
+        asyncIndex(wiki, wikiPage);
         return wikiPage;
     }
 
@@ -816,6 +880,8 @@ public class ApiController extends AbstractController {
     public WikiPage wikiPageUpdate(@PathVariable("id") long id, @RequestBody WikiPageBean bean) {
         WikiPage wikiPage = this.wikiService.updateWikiPage(HttpContext.getRequiredCurrentUser(), id, bean);
         this.wikiService.removeWikiFromCache(wikiPage.wikiId);
+        Wiki wiki = this.wikiService.getById(wikiPage.wikiId);
+        asyncIndex(wiki, wikiPage);
         return wikiPage;
     }
 
@@ -825,6 +891,8 @@ public class ApiController extends AbstractController {
         bean.validate(true);
         WikiPage wikiPage = this.wikiService.moveWikiPage(HttpContext.getRequiredCurrentUser(), wikiPageId, bean.parentId, bean.displayIndex);
         this.wikiService.removeWikiFromCache(wikiPage.wikiId);
+        Wiki wiki = this.wikiService.getById(wikiPage.wikiId);
+        asyncIndex(wiki, wikiPage);
         return wikiPage;
     }
 
@@ -833,7 +901,52 @@ public class ApiController extends AbstractController {
     public Map<String, Boolean> wikiPageDelete(@PathVariable("id") long id) {
         WikiPage wikiPage = this.wikiService.deleteWikiPage(HttpContext.getRequiredCurrentUser(), id);
         this.wikiService.removeWikiFromCache(wikiPage.wikiId);
+        asyncUnindex(id);
         return API_RESULT_TRUE;
+    }
+
+    ///////////////////////////////////////////////////////////////////////////////////////////////
+    // async index
+    ///////////////////////////////////////////////////////////////////////////////////////////////
+
+    private void asyncIndex(Article article) {
+        new Thread(() -> {
+            try {
+                searcher.indexArticles(article);
+            } catch (Exception e) {
+                logger.error("index article failed.", e);
+            }
+        }).start();
+    }
+
+    private void asyncUnindex(long id) {
+        new Thread(() -> {
+            try {
+                searcher.unindexSearchableDocument(id);
+            } catch (Exception e) {
+                logger.error("unindex failed.", e);
+            }
+        }).start();
+    }
+
+    private void asyncIndex(Wiki wiki) {
+        new Thread(() -> {
+            try {
+                searcher.indexWiki(wiki);
+            } catch (Exception e) {
+                logger.error("index wiki failed.", e);
+            }
+        }).start();
+    }
+
+    private void asyncIndex(Wiki wiki, WikiPage wikiPage) {
+        new Thread(() -> {
+            try {
+                searcher.indexWikiPages(wiki, List.of(wikiPage));
+            } catch (Exception e) {
+                logger.error("index wiki page failed.", e);
+            }
+        }).start();
     }
 
     ///////////////////////////////////////////////////////////////////////////////////////////////
@@ -893,6 +1006,10 @@ public class ApiController extends AbstractController {
             this.name = name;
             this.url = url;
         }
+    }
+
+    public static class UpdatePasswordBean {
+        public String password;
     }
 
     private static final String RESULTS = "results";

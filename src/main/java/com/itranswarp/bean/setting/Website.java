@@ -20,13 +20,16 @@ public class Website extends AbstractSettingBean {
     @SettingInput(value = InputType.TEXT, order = 5, description = "XML namespace")
     public String xmlns;
 
-    @SettingInput(value = InputType.TEXT, order = 6, description = "Copyright")
+    @SettingInput(value = InputType.TEXT, order = 7, description = "Copyright")
     public String copyright;
 
-    @SettingInput(value = InputType.TEXTAREA, order = 6, description = "Custom header")
+    @SettingInput(value = InputType.TEXT, order = 10, description = "Custom Fonts")
+    public String customFont;
+
+    @SettingInput(value = InputType.TEXTAREA, order = 11, description = "Custom header")
     public String customHeader;
 
-    @SettingInput(value = InputType.TEXTAREA, order = 7, description = "Custom footer")
+    @SettingInput(value = InputType.TEXTAREA, order = 12, description = "Custom footer")
     public String customFooter;
 
 }

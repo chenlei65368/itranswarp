@@ -3,13 +3,13 @@
 
 	<groupId>com.itranswarp.web</groupId>
 	<artifactId>itranswarp</artifactId>
-	<version>1.0</version>
+	<version>1.12</version>
 	<packaging>jar</packaging>
 
 	<parent>
 		<groupId>org.springframework.boot</groupId>
 		<artifactId>spring-boot-starter-parent</artifactId>
-		<version>2.2.6.RELEASE</version>
+		<version>2.6.6</version>
 	</parent>
 
 	<scm>
@@ -22,20 +22,21 @@
 	<properties>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 		<project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-		<maven.compiler.source>11</maven.compiler.source>
-		<maven.compiler.target>11</maven.compiler.target>
+		<maven.compiler.source>17</maven.compiler.source>
+		<maven.compiler.target>17</maven.compiler.target>
 		<maven.build.timestamp.format>yyyy-MM-dd-HH-mm</maven.build.timestamp.format>
-		<java.version>11</java.version>
+		<java.version>17</java.version>
 
 		<!-- override springboot managed mysql connector version -->
 		<mysql.version>5.1.47</mysql.version>
 
 		<commonmark.version>0.12.1</commonmark.version>
 		<commons-validator.version>1.6</commons-validator.version>
-		<lesscss.version>1.7.0.1.1</lesscss.version>
-		<lucene.version>8.5.0</lucene.version>
+		<jcseg.version>2.6.3</jcseg.version>
+		<lettucemod.version>2.17.0</lettucemod.version>
 		<pebble.version>3.1.2</pebble.version>
-		<warpdb.version>5.0.0</warpdb.version>
+		<warpdb.version>5.0.4</warpdb.version>
+		<web3j.version>4.8.4</web3j.version>
 	</properties>
 
 	<dependencies>
@@ -58,8 +59,15 @@
 
 		<!-- redis -->
 		<dependency>
-			<groupId>io.lettuce</groupId>
-			<artifactId>lettuce-core</artifactId>
+			<groupId>com.redis</groupId>
+			<artifactId>lettucemod</artifactId>
+			<version>${lettucemod.version}</version>
+		</dependency>
+
+		<dependency>
+			<groupId>org.lionsoul</groupId>
+			<artifactId>jcseg-core</artifactId>
+			<version>${jcseg.version}</version>
 		</dependency>
 
 		<!-- markdown -->
@@ -105,26 +113,11 @@
 			<version>${warpdb.version}</version>
 		</dependency>
 
-		<!-- lucene -->
+		<!-- web3 -->
 		<dependency>
-			<groupId>org.apache.lucene</groupId>
-			<artifactId>lucene-core</artifactId>
-			<version>${lucene.version}</version>
-		</dependency>
-		<dependency>
-			<groupId>org.apache.lucene</groupId>
-			<artifactId>lucene-queries</artifactId>
-			<version>${lucene.version}</version>
-		</dependency>
-		<dependency>
-			<groupId>org.apache.lucene</groupId>
-			<artifactId>lucene-queryparser</artifactId>
-			<version>${lucene.version}</version>
-		</dependency>
-		<dependency>
-			<groupId>org.apache.lucene</groupId>
-			<artifactId>lucene-highlighter</artifactId>
-			<version>${lucene.version}</version>
+			<groupId>org.web3j</groupId>
+			<artifactId>core</artifactId>
+			<version>${web3j.version}</version>
 		</dependency>
 
 		<!-- junit5 -->
@@ -199,16 +192,36 @@
 				</configuration>
 			</plugin>
 
-			<!-- compiler for Java 11 -->
+			<!-- create bundle css and js -->
 			<plugin>
-				<groupId>org.apache.maven.plugins</groupId>
-				<artifactId>maven-compiler-plugin</artifactId>
+				<groupId>org.codehaus.mojo</groupId>
+				<artifactId>exec-maven-plugin</artifactId>
+				<version>3.0.0</version>
+				<executions>
+					<execution>
+						<phase>package</phase>
+						<goals>
+							<goal>java</goal>
+						</goals>
+					</execution>
+				</executions>
 				<configuration>
-					<release>11</release>
-					<compilerArgs>
-						<arg>-parameters</arg>
-						<arg>-Xlint:all</arg>
-					</compilerArgs>
+					<mainClass>com.itranswarp.MergeResources</mainClass>
+					<workingDirectory>${project.basedir}</workingDirectory>
+				</configuration>
+			</plugin>
+
+			<!-- docker build -->
+			<plugin>
+				<groupId>com.spotify</groupId>
+				<artifactId>dockerfile-maven-plugin</artifactId>
+				<version>1.4.13</version>
+				<configuration>
+					<repository>michaelliao/itranswarp</repository>
+					<tag>${project.version}</tag>
+					<buildArgs>
+						<JAR_FILE>${project.build.finalName}.jar</JAR_FILE>
+					</buildArgs>
 				</configuration>
 			</plugin>
 		</plugins>

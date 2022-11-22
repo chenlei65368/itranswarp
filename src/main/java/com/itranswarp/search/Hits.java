@@ -4,15 +4,18 @@ import java.util.List;
 
 public class Hits {
 
-	public final int total;
+    public final int total;
 
-	public final int offset;
+    public final List<SearchableDocument> documents;
 
-	public final List<SearchableDocument> documents;
+    public Hits(int total, List<SearchableDocument> documents) {
+        this.total = total;
+        this.documents = documents;
+    }
 
-	public Hits(int total, int offset, List<SearchableDocument> documents) {
-		this.total = total;
-		this.offset = offset;
-		this.documents = documents;
-	}
+    public static Hits empty() {
+        return EMPTY;
+    }
+
+    private static final Hits EMPTY = new Hits(0, List.of());
 }
