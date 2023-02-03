@@ -96,6 +96,7 @@ public class GlobalFilterRegistrationBean extends FilterRegistrationBean<Filter>
                 return;
             }
             final String path = request.getRequestURI();
+            // 这里是限流操作
             // check rate limit but except static file:
             if (!path.startsWith("/static/") && !path.startsWith("/files/")) {
                 int remaining = rateLimiter.getRateLimit("www", ip, rateLimit, rateLimitBurst);
