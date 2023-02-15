@@ -4,7 +4,11 @@ import javax.persistence.Column;
 import javax.persistence.Entity;
 import javax.persistence.Table;
 import javax.persistence.UniqueConstraint;
-
+/**
+ * <pre>
+ * 板块
+ * </pre>
+ */
 @Entity
 @Table(name = "boards", uniqueConstraints = @UniqueConstraint(name = "UNI_TAG", columnNames = { "tag" }))
 public class Board extends AbstractSortableEntity {
