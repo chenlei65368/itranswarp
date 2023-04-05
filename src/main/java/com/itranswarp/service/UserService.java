@@ -6,6 +6,7 @@ import java.util.StringJoiner;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.validator.routines.EmailValidator;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import org.web3j.crypto.Keys;
@@ -28,7 +29,23 @@ import com.itranswarp.warpdb.PagedResults;
 @Component
 public class UserService extends AbstractDbService<User> {
 
+    @Value("${spring.signin.default-image:/static/img/user.png}")
+    String defaultImage;
+
     static final String KEY_USERS = "__users__";
+
+    public String getOAuthImageUrl(boolean ignoreImage, OAuthAuthentication auth) {
+        if (ignoreImage) {
+            return getDefaultImage(auth.getName());
+        }
+        return auth.getImageUrl();
+    }
+
+    String getDefaultImage(String name) {
+        String s = this.defaultImage;
+        s = s.replace("{name}", HashUtil.sha1(name));
+        return s;
+    }
 
     public List<User> getUsersFromCache(Object... ids) {
         var kvs = this.redisService.hmget(KEY_USERS, ids);
@@ -104,7 +121,7 @@ public class UserService extends AbstractDbService<User> {
             user.id = IdUtil.nextId();
             user.email = address + "@eth";
             user.name = checksumAddress.substring(0, 8) + "..." + checksumAddress.substring(36);
-            user.imageUrl = "/static/img/eth.svg";
+            user.imageUrl = getDefaultImage(user.name);
             user.role = Role.SUBSCRIBER;
 
             auth = new EthAuth();
@@ -122,10 +139,10 @@ public class UserService extends AbstractDbService<User> {
     }
 
     @Transactional
-    public OAuth getOAuth(String authProviderId, OAuthAuthentication authentication) {
+    public OAuth getOAuth(String authProviderId, boolean ignoreImage, OAuthAuthentication authentication) {
         OAuth oauth = this.db.from(OAuth.class).where("authProviderId = ? AND authId = ?", authProviderId, authentication.getAuthenticationId()).first();
         if (oauth == null) {
-            return createOAuthUser(authProviderId, authentication);
+            return createOAuthUser(authProviderId, ignoreImage, authentication);
         }
         oauth.authToken = authentication.getAccessToken();
         oauth.expiresAt = System.currentTimeMillis() + authentication.getExpires().toMillis();
@@ -133,7 +150,7 @@ public class UserService extends AbstractDbService<User> {
         return oauth;
     }
 
-    OAuth createOAuthUser(String authProviderId, OAuthAuthentication authentication) {
+    OAuth createOAuthUser(String authProviderId, boolean ignoreImage, OAuthAuthentication authentication) {
         if ("local".equals(authProviderId) || "eth".equals(authProviderId)) {
             throw new RuntimeException("Invalid provider: " + authProviderId);
         }
@@ -141,7 +158,7 @@ public class UserService extends AbstractDbService<User> {
         user.id = IdUtil.nextId();
         user.email = user.id + "@" + authProviderId.toLowerCase();
         user.name = checkName(authentication.getName());
-        user.imageUrl = checkImageUrl(authentication.getImageUrl());
+        user.imageUrl = getOAuthImageUrl(ignoreImage, authentication);
         user.role = Role.SUBSCRIBER;
 
         OAuth auth = new OAuth();
@@ -150,6 +167,7 @@ public class UserService extends AbstractDbService<User> {
         auth.authId = authentication.getAuthenticationId();
         auth.authToken = authentication.getAccessToken();
         auth.expiresAt = System.currentTimeMillis() + authentication.getExpires().toMillis();
+        auth.isNew = true;
 
         this.db.insert(user);
         this.db.insert(auth);
@@ -157,12 +175,12 @@ public class UserService extends AbstractDbService<User> {
     }
 
     @Transactional
-    public User createLocalUser(String email, String password, String name, String imageUrl) {
+    public User createLocalUser(String email, String password, String name) {
         User user = new User();
         user.id = IdUtil.nextId();
         user.email = checkEmail(email);
         user.name = checkName(name);
-        user.imageUrl = checkImageUrl(imageUrl);
+        user.imageUrl = getDefaultImage(user.name);
         user.role = Role.SUBSCRIBER;
         LocalAuth auth = new LocalAuth();
         auth.userId = user.id;
@@ -202,6 +220,11 @@ public class UserService extends AbstractDbService<User> {
             this.db.updateProperties(user, "role");
         }
         return user;
+    }
+
+    @Transactional
+    public void updateUserProfile(User user) {
+        this.db.updateProperties(user, "name", "imageUrl", "updatedAt", "version");
     }
 
     @Transactional

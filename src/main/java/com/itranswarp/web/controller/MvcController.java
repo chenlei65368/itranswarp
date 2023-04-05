@@ -12,8 +12,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -72,12 +72,6 @@ import com.itranswarp.web.filter.HttpContext;
  */
 @Controller
 public class MvcController extends AbstractController {
-
-    @Value("#{applicationConfiguration.name}")
-    String name;
-
-    @Value("#{applicationConfiguration.dev}")
-    Boolean dev;
 
     @Value("${spring.signin.password.enabled}")
     boolean passauthEnabled;
@@ -504,11 +498,19 @@ public class MvcController extends AbstractController {
             throw new ApiException(ApiError.AUTH_SIGNIN_FAILED, null, "Signin from OAuth failed.");
         }
         logger.info("oauth ok from {}: {}", authProviderId, authentication.getAuthenticationId());
-        OAuth auth = this.userService.getOAuth(authProviderId, authentication);
+        OAuth auth = this.userService.getOAuth(authProviderId, provider.getOAuthConfiguration().isIgnoreImage(), authentication);
         User user = this.userService.getEnabledUserById(auth.userId);
         if (user == null) {
             response.sendError(HttpServletResponse.SC_FORBIDDEN, "User is locked.");
             return null;
+        }
+        if (!auth.isNew) {
+            // update user name and image:
+            user.name = authentication.getName();
+            user.imageUrl = this.userService.getOAuthImageUrl(provider.getOAuthConfiguration().isIgnoreImage(), authentication);
+            user.updatedAt = System.currentTimeMillis();
+            user.version++;
+            userService.updateUserProfile(user);
         }
         String cookieStr = CookieUtil.encodeSessionCookie(auth, encryptService.getSessionHmacKey());
         CookieUtil.setSessionCookie(request, response, cookieStr, (int) authentication.getExpires().toSeconds());
