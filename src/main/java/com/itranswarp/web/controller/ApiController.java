@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-import javax.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequest;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -53,6 +53,7 @@ import com.itranswarp.model.Category;
 import com.itranswarp.model.Headline;
 import com.itranswarp.model.Link;
 import com.itranswarp.model.Navigation;
+import com.itranswarp.model.PasskeyAuth;
 import com.itranswarp.model.Reply;
 import com.itranswarp.model.SinglePage;
 import com.itranswarp.model.Topic;
@@ -570,6 +571,7 @@ public class ApiController extends AbstractController {
     ///////////////////////////////////////////////////////////////////////////////////////////////
 
     @PostMapping("/setting/website")
+    @RoleWith(Role.ADMIN)
     public Map<String, Boolean> settingWebsiteUpdate(@RequestBody Website bean) {
         this.settingService.setWebsite(bean);
         this.settingService.deleteWebsiteFromCache();
@@ -577,6 +579,7 @@ public class ApiController extends AbstractController {
     }
 
     @PostMapping("/setting/snippet")
+    @RoleWith(Role.ADMIN)
     public Map<String, Boolean> settingSnippetUpdate(@RequestBody Snippet bean) {
         this.settingService.setSnippet(bean);
         this.settingService.deleteSnippetFromCache();
@@ -584,6 +587,7 @@ public class ApiController extends AbstractController {
     }
 
     @PostMapping("/setting/follow")
+    @RoleWith(Role.ADMIN)
     public Map<String, Boolean> settingFollowUpdate(@RequestBody Follow bean) {
         this.settingService.setFollow(bean);
         this.settingService.deleteFollowFromCache();
@@ -591,6 +595,7 @@ public class ApiController extends AbstractController {
     }
 
     @PostMapping("/setting/security")
+    @RoleWith(Role.ADMIN)
     public Map<String, Boolean> settingSecurityUpdate(@RequestBody Security bean) {
         this.settingService.setSecurity(bean);
         return API_RESULT_TRUE;
@@ -753,6 +758,22 @@ public class ApiController extends AbstractController {
     ///////////////////////////////////////////////////////////////////////////////////////////////
     // user
     ///////////////////////////////////////////////////////////////////////////////////////////////
+
+    @GetMapping("/users/passkeys")
+    @RoleWith(Role.SUBSCRIBER)
+    public Map<String, List<PasskeyAuth>> userPasskeys() {
+        User user = HttpContext.getRequiredCurrentUser();
+        List<PasskeyAuth> passkeys = userService.getPasskeyAuths(user.id);
+        return Map.of(RESULTS, passkeys);
+    }
+
+    @PostMapping("/users/passkeys/{id}/delete")
+    @RoleWith(Role.SUBSCRIBER)
+    public Map<String, Boolean> deletePasskey(@PathVariable("id") long id) {
+        User user = HttpContext.getRequiredCurrentUser();
+        userService.deletePasskeyAuth(user.id, id);
+        return API_RESULT_TRUE;
+    }
 
     @GetMapping("/users")
     @RoleWith(Role.CONTRIBUTOR)
@@ -1011,9 +1032,4 @@ public class ApiController extends AbstractController {
     public static class UpdatePasswordBean {
         public String password;
     }
-
-    private static final String RESULTS = "results";
-
-    private static final Map<String, Boolean> API_RESULT_TRUE = Map.of("result", Boolean.TRUE);
-
 }

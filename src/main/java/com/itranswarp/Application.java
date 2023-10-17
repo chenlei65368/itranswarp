@@ -26,7 +26,8 @@ import com.itranswarp.web.support.MvcConfiguration;
  */
 @SpringBootApplication
 @EnableScheduling
-@Import({ ApplicationConfiguration.class, MvcConfiguration.class })
+@EnableAutoConfiguration
+@Import(MvcConfiguration.class)
 public class Application {
 
     static final Logger logger = LoggerFactory.getLogger(Application.class);

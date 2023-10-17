@@ -1,12 +1,13 @@
 package com.itranswarp.model;
 
-import javax.persistence.Column;
-import javax.persistence.Entity;
-import javax.persistence.Table;
-import javax.persistence.UniqueConstraint;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
+import jakarta.persistence.UniqueConstraint;
 
 @Entity
-@Table(name = "oauths", uniqueConstraints = @UniqueConstraint(name = "UNI_AUTH", columnNames = { "authProviderId,authId" }))
+@Table(name = "oauths", uniqueConstraints = @UniqueConstraint(name = "UNI_AUTH", columnNames = { "authProviderId", "authId" }))
 public class OAuth extends AbstractEntity {
 
     @Column(nullable = false, updatable = false)
@@ -33,4 +34,6 @@ public class OAuth extends AbstractEntity {
     @Column(nullable = false)
     public long expiresAt;
 
+    @Transient
+    public boolean isNew;
 }

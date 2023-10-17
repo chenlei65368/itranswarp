@@ -12,8 +12,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -48,6 +48,7 @@ import com.itranswarp.model.EthAuth;
 import com.itranswarp.model.Headline;
 import com.itranswarp.model.LocalAuth;
 import com.itranswarp.model.OAuth;
+import com.itranswarp.model.PasskeyAuth;
 import com.itranswarp.model.Reply;
 import com.itranswarp.model.SinglePage;
 import com.itranswarp.model.Topic;
@@ -73,14 +74,11 @@ import com.itranswarp.web.filter.HttpContext;
 @Controller
 public class MvcController extends AbstractController {
 
-    @Value("#{applicationConfiguration.name}")
-    String name;
-
-    @Value("#{applicationConfiguration.dev}")
-    Boolean dev;
-
     @Value("${spring.signin.password.enabled}")
     boolean passauthEnabled;
+
+    @Value("${spring.signin.passkey.enabled}")
+    boolean passkeyauthEnabled;
 
     @Value("${spring.signin.eth.enabled}")
     boolean ethauthEnabled;
@@ -100,7 +98,7 @@ public class MvcController extends AbstractController {
 
     @GetMapping("/")
     public ModelAndView index() {
-        List<Article> recentArticles = this.articleService.getPublishedArticles(10);
+        List<Article> recentArticles = this.articleService.getPublishedArticlesFromCache(10);
         List<Topic> recentTopics = this.boardService.getRecentTopicsFromCache();
         return prepareModelAndView("index.html", Map.of("recentArticles", recentArticles, "recentTopics", recentTopics));
     }
@@ -368,6 +366,13 @@ public class MvcController extends AbstractController {
         return prepareModelAndView("profile.html", Map.of("user", user, "topics", topics));
     }
 
+    @GetMapping("/passkey")
+    public ModelAndView passkey() {
+        User user = HttpContext.getRequiredCurrentUser();
+        List<PasskeyAuth> passkeys = userService.getPasskeyAuths(user.id);
+        return prepareModelAndView("passkey.html", Map.of("user", user, "passkeys", passkeys));
+    }
+
     ///////////////////////////////////////////////////////////////////////////////////////////////
     // sign in
     ///////////////////////////////////////////////////////////////////////////////////////////////
@@ -376,6 +381,7 @@ public class MvcController extends AbstractController {
     public ModelAndView signin(@RequestParam(value = "type", defaultValue = "") String type, HttpServletRequest request) {
         boolean oauthEnabled = !this.oauthProviders.getOAuthProviders().isEmpty();
         boolean passauthEnabled = this.passauthEnabled;
+        boolean passkeyauthEnabled = this.passkeyauthEnabled;
         if (!oauthEnabled && !passauthEnabled) {
             throw new ApiException(ApiError.INTERNAL_SERVER_ERROR, null, "Invalid signin configuration.");
         }
@@ -384,6 +390,9 @@ public class MvcController extends AbstractController {
         }
         if (!passauthEnabled && type.equals("passauth")) {
             throw new ApiException(ApiError.PARAMETER_INVALID, "type", "Do not support password signin.");
+        }
+        if (!passkeyauthEnabled && type.equals("passkeyauth")) {
+            throw new ApiException(ApiError.PARAMETER_INVALID, "type", "Do not support passkey signin.");
         }
         if (type.isEmpty() && oauthEnabled) {
             type = "oauth";
@@ -394,8 +403,11 @@ public class MvcController extends AbstractController {
         if (type.isEmpty() && ethauthEnabled) {
             type = "ethauth";
         }
-        return prepareModelAndView("signin.html", Map.of("type", type, "oauthEnabled", oauthEnabled, "passauthEnabled", passauthEnabled, "ethauthEnabled",
-                ethauthEnabled, "oauthConfigurations", this.oauthProviders.getOAuthConfigurations()));
+        if (type.isEmpty() && passkeyauthEnabled) {
+            type = "passkeyauth";
+        }
+        return prepareModelAndView("signin.html", Map.of("type", type, "oauthEnabled", oauthEnabled, "passauthEnabled", passauthEnabled, "passkeyauthEnabled",
+                passkeyauthEnabled, "ethauthEnabled", ethauthEnabled, "oauthConfigurations", this.oauthProviders.getOAuthConfigurations()));
     }
 
     @PostMapping("/auth/signin/local")
@@ -504,11 +516,19 @@ public class MvcController extends AbstractController {
             throw new ApiException(ApiError.AUTH_SIGNIN_FAILED, null, "Signin from OAuth failed.");
         }
         logger.info("oauth ok from {}: {}", authProviderId, authentication.getAuthenticationId());
-        OAuth auth = this.userService.getOAuth(authProviderId, authentication);
+        OAuth auth = this.userService.getOAuth(authProviderId, provider.getOAuthConfiguration().isIgnoreImage(), authentication);
         User user = this.userService.getEnabledUserById(auth.userId);
         if (user == null) {
             response.sendError(HttpServletResponse.SC_FORBIDDEN, "User is locked.");
             return null;
+        }
+        if (!auth.isNew) {
+            // update user name and image:
+            user.name = authentication.getName();
+            user.imageUrl = this.userService.getOAuthImageUrl(provider.getOAuthConfiguration().isIgnoreImage(), authentication);
+            user.updatedAt = System.currentTimeMillis();
+            user.version++;
+            userService.updateUserProfile(user);
         }
         String cookieStr = CookieUtil.encodeSessionCookie(auth, encryptService.getSessionHmacKey());
         CookieUtil.setSessionCookie(request, response, cookieStr, (int) authentication.getExpires().toSeconds());

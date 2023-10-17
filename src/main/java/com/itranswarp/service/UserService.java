@@ -1,11 +1,13 @@
 package com.itranswarp.service;
 
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
 import java.util.StringJoiner;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.validator.routines.EmailValidator;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import org.web3j.crypto.Keys;
@@ -17,6 +19,8 @@ import com.itranswarp.model.AbstractEntity;
 import com.itranswarp.model.EthAuth;
 import com.itranswarp.model.LocalAuth;
 import com.itranswarp.model.OAuth;
+import com.itranswarp.model.PasskeyAuth;
+import com.itranswarp.model.PasskeyChallenge;
 import com.itranswarp.model.User;
 import com.itranswarp.oauth.OAuthAuthentication;
 import com.itranswarp.util.HashUtil;
@@ -24,11 +28,41 @@ import com.itranswarp.util.IdUtil;
 import com.itranswarp.util.JsonUtil;
 import com.itranswarp.util.RandomUtil;
 import com.itranswarp.warpdb.PagedResults;
+import com.webauthn4j.util.Base64UrlUtil;
+
+import jakarta.annotation.PostConstruct;
 
 @Component
 public class UserService extends AbstractDbService<User> {
 
+    @Value("${spring.signin.default-image:/avatar/{name}}")
+    String defaultImage;
+
+    @Value("${spring.signin.passkey.challenge-timeout}")
+    Duration passKeyChallengeTimeout = Duration.ofMinutes(1);
+
+    @Value("${spring.signin.passkey.max}")
+    int passkeyMax = 5;
+
     static final String KEY_USERS = "__users__";
+
+    @PostConstruct
+    void init() {
+        logger.info("set default image: {}", this.defaultImage);
+    }
+
+    public String getOAuthImageUrl(boolean ignoreImage, OAuthAuthentication auth) {
+        if (ignoreImage) {
+            return getDefaultImage(auth.getName());
+        }
+        return auth.getImageUrl();
+    }
+
+    String getDefaultImage(String name) {
+        String s = this.defaultImage;
+        s = s.replace("{name}", HashUtil.sha1(name));
+        return s;
+    }
 
     public List<User> getUsersFromCache(Object... ids) {
         var kvs = this.redisService.hmget(KEY_USERS, ids);
@@ -104,7 +138,7 @@ public class UserService extends AbstractDbService<User> {
             user.id = IdUtil.nextId();
             user.email = address + "@eth";
             user.name = checksumAddress.substring(0, 8) + "..." + checksumAddress.substring(36);
-            user.imageUrl = "/static/img/eth.svg";
+            user.imageUrl = getDefaultImage(user.name);
             user.role = Role.SUBSCRIBER;
 
             auth = new EthAuth();
@@ -121,11 +155,79 @@ public class UserService extends AbstractDbService<User> {
         return auth;
     }
 
+    public PasskeyAuth fetchPasskeyAuth(long id) {
+        return this.db.fetch(PasskeyAuth.class, id);
+    }
+
+    public PasskeyAuth fetchPasskeyAuthByCredentialId(long userId, String credentialId) {
+        return this.db.from(PasskeyAuth.class).where("userId = ? AND credentialId = ?", userId, credentialId).first();
+    }
+
+    public List<PasskeyAuth> getPasskeyAuths(long userId) {
+        return this.db.from(PasskeyAuth.class).where("userId = ?", userId).list();
+    }
+
     @Transactional
-    public OAuth getOAuth(String authProviderId, OAuthAuthentication authentication) {
+    public PasskeyAuth createPasskeyAuth(User user, String device, int alg, String credentialId, String pubKey, String[] transports) {
+        int count = this.db.from(PasskeyAuth.class).where("userId = ?", user.id).count();
+        if (count >= this.passkeyMax) {
+            throw new ApiException(ApiError.OPERATION_FAILED, null, "Maximum passkeys.");
+        }
+        var pkAuth = new PasskeyAuth();
+        pkAuth.userId = user.id;
+        pkAuth.credentialId = credentialId;
+        pkAuth.pubKey = pubKey;
+        pkAuth.device = device;
+        pkAuth.alg = alg;
+        pkAuth.transports = transports == null ? "" : String.join(",", transports);
+        this.db.insert(pkAuth);
+        return pkAuth;
+    }
+
+    @Transactional
+    public void updatePasskeyLastUsed(PasskeyAuth pkAuth) {
+        pkAuth.updatedAt = System.currentTimeMillis();
+        this.db.updateProperties(pkAuth, "updatedAt");
+    }
+
+    @Transactional
+    public void deletePasskeyAuth(long userId, long id) {
+        var pkAuth = this.db.fetch(PasskeyAuth.class, id);
+        if (pkAuth == null || pkAuth.userId != userId) {
+            throw new ApiException(ApiError.ENTITY_NOT_FOUND, "PasskeyAuth", "Passkey not found.");
+        }
+        this.db.remove(pkAuth);
+    }
+
+    @Transactional
+    public PasskeyChallenge createPasskeyChallenge() {
+        byte[] rnd = RandomUtil.createRandomBytes(32);
+        var pkc = new PasskeyChallenge();
+        pkc.expiresAt = System.currentTimeMillis() + this.passKeyChallengeTimeout.toMillis();
+        pkc.challenge = Base64UrlUtil.encodeToString(rnd);
+        this.db.insert(pkc);
+        return pkc;
+    }
+
+    public PasskeyChallenge fetchNonExpiredPasskeyChallenge(String challenge) {
+        var pkc = this.db.from(PasskeyChallenge.class).where("challenge = ?", challenge).first();
+        if (pkc != null && pkc.expiresAt > System.currentTimeMillis()) {
+            return pkc;
+        }
+        return null;
+    }
+
+    @Transactional
+    public void deleteExpiresPassKeyChallenge() {
+        long current = System.currentTimeMillis();
+        this.db.updateSql("DELETE FROM passkey_challenges WHERE expiresAt < ?", current);
+    }
+
+    @Transactional
+    public OAuth getOAuth(String authProviderId, boolean ignoreImage, OAuthAuthentication authentication) {
         OAuth oauth = this.db.from(OAuth.class).where("authProviderId = ? AND authId = ?", authProviderId, authentication.getAuthenticationId()).first();
         if (oauth == null) {
-            return createOAuthUser(authProviderId, authentication);
+            return createOAuthUser(authProviderId, ignoreImage, authentication);
         }
         oauth.authToken = authentication.getAccessToken();
         oauth.expiresAt = System.currentTimeMillis() + authentication.getExpires().toMillis();
@@ -133,7 +235,7 @@ public class UserService extends AbstractDbService<User> {
         return oauth;
     }
 
-    OAuth createOAuthUser(String authProviderId, OAuthAuthentication authentication) {
+    OAuth createOAuthUser(String authProviderId, boolean ignoreImage, OAuthAuthentication authentication) {
         if ("local".equals(authProviderId) || "eth".equals(authProviderId)) {
             throw new RuntimeException("Invalid provider: " + authProviderId);
         }
@@ -141,7 +243,7 @@ public class UserService extends AbstractDbService<User> {
         user.id = IdUtil.nextId();
         user.email = user.id + "@" + authProviderId.toLowerCase();
         user.name = checkName(authentication.getName());
-        user.imageUrl = checkImageUrl(authentication.getImageUrl());
+        user.imageUrl = getOAuthImageUrl(ignoreImage, authentication);
         user.role = Role.SUBSCRIBER;
 
         OAuth auth = new OAuth();
@@ -150,6 +252,7 @@ public class UserService extends AbstractDbService<User> {
         auth.authId = authentication.getAuthenticationId();
         auth.authToken = authentication.getAccessToken();
         auth.expiresAt = System.currentTimeMillis() + authentication.getExpires().toMillis();
+        auth.isNew = true;
 
         this.db.insert(user);
         this.db.insert(auth);
@@ -157,12 +260,12 @@ public class UserService extends AbstractDbService<User> {
     }
 
     @Transactional
-    public User createLocalUser(String email, String password, String name, String imageUrl) {
+    public User createLocalUser(String email, String password, String name) {
         User user = new User();
         user.id = IdUtil.nextId();
         user.email = checkEmail(email);
         user.name = checkName(name);
-        user.imageUrl = checkImageUrl(imageUrl);
+        user.imageUrl = getDefaultImage(user.name);
         user.role = Role.SUBSCRIBER;
         LocalAuth auth = new LocalAuth();
         auth.userId = user.id;
@@ -202,6 +305,11 @@ public class UserService extends AbstractDbService<User> {
             this.db.updateProperties(user, "role");
         }
         return user;
+    }
+
+    @Transactional
+    public void updateUserProfile(User user) {
+        this.db.updateProperties(user, "name", "imageUrl", "updatedAt", "version");
     }
 
     @Transactional

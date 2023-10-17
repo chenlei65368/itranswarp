@@ -198,7 +198,36 @@ CREATE TABLE oauths (
   authProviderId VARCHAR(32) NOT NULL,
   authId VARCHAR(255) NOT NULL,
   authToken VARCHAR(255) NOT NULL,
-  CONSTRAINT UNI_AUTH UNIQUE (authProviderId,authId),
+  CONSTRAINT UNI_AUTH UNIQUE (authProviderId, authId),
+  PRIMARY KEY(id)
+) Engine=INNODB DEFAULT CHARSET=UTF8;
+
+
+CREATE TABLE passkey_auths (
+  id BIGINT NOT NULL,
+  alg INTEGER NOT NULL,
+  createdAt BIGINT NOT NULL,
+  updatedAt BIGINT NOT NULL,
+  userId BIGINT NOT NULL,
+  version BIGINT NOT NULL,
+  credentialId VARCHAR(100) NOT NULL,
+  device VARCHAR(100) NOT NULL,
+  pubKey VARCHAR(255) NOT NULL,
+  transports VARCHAR(100) NOT NULL,
+  CONSTRAINT UNI_PUBKEY UNIQUE (pubKey),
+  INDEX IDX_UID (userId),
+  PRIMARY KEY(id)
+) Engine=INNODB DEFAULT CHARSET=UTF8;
+
+
+CREATE TABLE passkey_challenges (
+  id BIGINT NOT NULL,
+  createdAt BIGINT NOT NULL,
+  expiresAt BIGINT NOT NULL,
+  updatedAt BIGINT NOT NULL,
+  version BIGINT NOT NULL,
+  challenge VARCHAR(255) NOT NULL,
+  CONSTRAINT UNI_CLG UNIQUE (challenge),
   PRIMARY KEY(id)
 ) Engine=INNODB DEFAULT CHARSET=UTF8;
 
@@ -286,6 +315,7 @@ CREATE TABLE topics (
   content TEXT NOT NULL,
   INDEX IDX_BOARDID (boardId),
   INDEX IDX_REFID (refId),
+  INDEX IDX_UID (userId),
   INDEX IDX_UPDATEDAT (updatedAt),
   PRIMARY KEY(id)
 ) Engine=INNODB DEFAULT CHARSET=UTF8MB4;

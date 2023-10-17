@@ -5,14 +5,14 @@ import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.List;
 
-import javax.annotation.PostConstruct;
-import javax.servlet.Filter;
-import javax.servlet.FilterChain;
-import javax.servlet.ServletException;
-import javax.servlet.ServletRequest;
-import javax.servlet.ServletResponse;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
+import jakarta.annotation.PostConstruct;
+import jakarta.servlet.Filter;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.ServletRequest;
+import jakarta.servlet.ServletResponse;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,6 +26,7 @@ import com.itranswarp.enums.Role;
 import com.itranswarp.model.EthAuth;
 import com.itranswarp.model.LocalAuth;
 import com.itranswarp.model.OAuth;
+import com.itranswarp.model.PasskeyAuth;
 import com.itranswarp.model.User;
 import com.itranswarp.oauth.OAuthProviders;
 import com.itranswarp.service.AntiSpamService;
@@ -125,6 +126,13 @@ public class GlobalFilterRegistrationBean extends FilterRegistrationBean<Filter>
                     } else if ("eth".equals(session.authProvider)) {
                         EthAuth auth = userService.fetchEthAuthById(session.id);
                         if (auth != null && session.validate(auth.address, encryptService.getSessionHmacKey())) {
+                            user = userService.getEnabledUserById(auth.userId);
+                        } else {
+                            CookieUtil.deleteSessionCookie(request, response);
+                        }
+                    } else if ("passkey".equals(session.authProvider)) {
+                        PasskeyAuth auth = userService.fetchPasskeyAuth(session.id);
+                        if (auth != null && session.validate(auth.pubKey, encryptService.getSessionHmacKey())) {
                             user = userService.getEnabledUserById(auth.userId);
                         } else {
                             CookieUtil.deleteSessionCookie(request, response);

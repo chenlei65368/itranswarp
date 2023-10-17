@@ -16,6 +16,8 @@ public enum ApiError {
 
     AUTH_SIGNIN_FAILED,
 
+    AUTH_SIGNIN_NO_PASSKEY,
+
     PERMISSION_DENIED,
 
     USER_FORBIDDEN,
@@ -25,6 +27,8 @@ public enum ApiError {
     USER_EMAIL_EXIST,
 
     RATE_LIMIT,
+
+    TIMEOUT,
 
     SECURITY_ANTI_SPAM,
 
