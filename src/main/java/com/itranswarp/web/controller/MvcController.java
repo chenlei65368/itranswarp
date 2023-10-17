@@ -48,6 +48,7 @@ import com.itranswarp.model.EthAuth;
 import com.itranswarp.model.Headline;
 import com.itranswarp.model.LocalAuth;
 import com.itranswarp.model.OAuth;
+import com.itranswarp.model.PasskeyAuth;
 import com.itranswarp.model.Reply;
 import com.itranswarp.model.SinglePage;
 import com.itranswarp.model.Topic;
@@ -76,6 +77,9 @@ public class MvcController extends AbstractController {
     @Value("${spring.signin.password.enabled}")
     boolean passauthEnabled;
 
+    @Value("${spring.signin.passkey.enabled}")
+    boolean passkeyauthEnabled;
+
     @Value("${spring.signin.eth.enabled}")
     boolean ethauthEnabled;
 
@@ -94,7 +98,7 @@ public class MvcController extends AbstractController {
 
     @GetMapping("/")
     public ModelAndView index() {
-        List<Article> recentArticles = this.articleService.getPublishedArticles(10);
+        List<Article> recentArticles = this.articleService.getPublishedArticlesFromCache(10);
         List<Topic> recentTopics = this.boardService.getRecentTopicsFromCache();
         return prepareModelAndView("index.html", Map.of("recentArticles", recentArticles, "recentTopics", recentTopics));
     }
@@ -362,6 +366,13 @@ public class MvcController extends AbstractController {
         return prepareModelAndView("profile.html", Map.of("user", user, "topics", topics));
     }
 
+    @GetMapping("/passkey")
+    public ModelAndView passkey() {
+        User user = HttpContext.getRequiredCurrentUser();
+        List<PasskeyAuth> passkeys = userService.getPasskeyAuths(user.id);
+        return prepareModelAndView("passkey.html", Map.of("user", user, "passkeys", passkeys));
+    }
+
     ///////////////////////////////////////////////////////////////////////////////////////////////
     // sign in
     ///////////////////////////////////////////////////////////////////////////////////////////////
@@ -370,6 +381,7 @@ public class MvcController extends AbstractController {
     public ModelAndView signin(@RequestParam(value = "type", defaultValue = "") String type, HttpServletRequest request) {
         boolean oauthEnabled = !this.oauthProviders.getOAuthProviders().isEmpty();
         boolean passauthEnabled = this.passauthEnabled;
+        boolean passkeyauthEnabled = this.passkeyauthEnabled;
         if (!oauthEnabled && !passauthEnabled) {
             throw new ApiException(ApiError.INTERNAL_SERVER_ERROR, null, "Invalid signin configuration.");
         }
@@ -378,6 +390,9 @@ public class MvcController extends AbstractController {
         }
         if (!passauthEnabled && type.equals("passauth")) {
             throw new ApiException(ApiError.PARAMETER_INVALID, "type", "Do not support password signin.");
+        }
+        if (!passkeyauthEnabled && type.equals("passkeyauth")) {
+            throw new ApiException(ApiError.PARAMETER_INVALID, "type", "Do not support passkey signin.");
         }
         if (type.isEmpty() && oauthEnabled) {
             type = "oauth";
@@ -388,8 +403,11 @@ public class MvcController extends AbstractController {
         if (type.isEmpty() && ethauthEnabled) {
             type = "ethauth";
         }
-        return prepareModelAndView("signin.html", Map.of("type", type, "oauthEnabled", oauthEnabled, "passauthEnabled", passauthEnabled, "ethauthEnabled",
-                ethauthEnabled, "oauthConfigurations", this.oauthProviders.getOAuthConfigurations()));
+        if (type.isEmpty() && passkeyauthEnabled) {
+            type = "passkeyauth";
+        }
+        return prepareModelAndView("signin.html", Map.of("type", type, "oauthEnabled", oauthEnabled, "passauthEnabled", passauthEnabled, "passkeyauthEnabled",
+                passkeyauthEnabled, "ethauthEnabled", ethauthEnabled, "oauthConfigurations", this.oauthProviders.getOAuthConfigurations()));
     }
 
     @PostMapping("/auth/signin/local")
